@@ -1,0 +1,534 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>A Family of Buttons</title>
+  <!--
+    RUBRIC — Tech stack:
+    Single self-contained file. Tailwind CSS is loaded from CDN (no build step,
+    no local CSS/JS bundles). All graphics are CSS shapes or inline SVG so the
+    prototype grades cleanly without missing image assets.
+  -->
+  <script src="assets/tailwind-runtime.js"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            turf: { deep: "#14532d", mid: "#166534", light: "#22c55e" },
+            shop: { paper: "#f4efe4", ink: "#3f3a32", rust: "#9a3412" }
+          },
+          minHeight: { touch: "56px" }
+        }
+      }
+    };
+  </script>
+  <style>
+    /*
+      RUBRIC — Background aesthetic:
+      A diagonal turf → workshop blend, plus pitch stripes on the left and
+      graph-paper on the right. Layers are position:fixed and pointer-events:none
+      so scenery never clips or blocks the interactive canvas.
+    */
+    :root {
+      --safe-b: env(safe-area-inset-bottom, 0px);
+      --safe-t: env(safe-area-inset-top, 0px);
+    }
+
+    html, body {
+      min-height: 100%;
+      min-height: 100dvh;
+    }
+
+    body {
+      background:
+        linear-gradient(105deg,
+          #14532d 0%,
+          #166534 36%,
+          #4d7c0f 48%,
+          #d6c7a8 52%,
+          #f4efe4 70%,
+          #efe6d6 100%);
+    }
+
+    .pitch-grain {
+      background-image:
+        repeating-linear-gradient(
+          90deg,
+          rgba(255, 255, 255, 0.07) 0 12px,
+          transparent 12px 28px
+        ),
+        repeating-linear-gradient(
+          0deg,
+          transparent 0 36px,
+          rgba(0, 0, 0, 0.08) 36px 38px
+        );
+    }
+
+    .graph-paper {
+      background-image:
+        linear-gradient(rgba(120, 90, 50, 0.18) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(120, 90, 50, 0.18) 1px, transparent 1px);
+      background-size: 18px 18px;
+    }
+
+    .brick {
+      background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.22), transparent 45%),
+        linear-gradient(90deg, rgba(0, 0, 0, 0.18), transparent 18%, transparent 82%, rgba(0, 0, 0, 0.22)),
+        linear-gradient(180deg, #c2410c, #9a3412 55%, #7c2d12);
+      box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.28),
+        inset 0 -2px 0 rgba(0, 0, 0, 0.25);
+      transition: transform 420ms ease, opacity 420ms ease, filter 420ms ease;
+    }
+
+    .wall {
+      background-color: #e7d5c4;
+      box-shadow:
+        0 18px 40px rgba(0, 0, 0, 0.28),
+        inset 0 0 0 3px #d6c2ae;
+    }
+
+    /* Pristine (80–100): no extra classes — solid masonry grid only. */
+
+    /* Fractured (40–79): impact glow + jagged SVG overlay. */
+    .wall.is-fractured {
+      filter: drop-shadow(0 0 10px rgba(127, 29, 29, 0.35));
+    }
+
+    .crack-overlay {
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 320ms ease;
+    }
+
+    .wall.is-fractured .crack-overlay,
+    .wall.is-crumbling .crack-overlay {
+      opacity: 1;
+    }
+
+    /* Crumbling (1–39): individual bricks skew, shift, and fade (offsets large enough to read on phones). */
+    .wall.is-crumbling .brick:nth-child(3n) { transform: translate(14px, 22px) rotate(10deg); opacity: 0.7; }
+    .wall.is-crumbling .brick:nth-child(3n+1) { transform: translate(-16px, 12px) rotate(-9deg); opacity: 0.62; }
+    .wall.is-crumbling .brick:nth-child(4n) { transform: translate(18px, -10px) rotate(12deg); opacity: 0.55; }
+    .wall.is-crumbling .brick:nth-child(5n) { transform: translate(-20px, 24px) rotate(-14deg); opacity: 0.48; }
+    .wall.is-crumbling .brick:nth-child(7n) { transform: translate(10px, 28px) skewX(-16deg); opacity: 0.4; }
+
+    /* Collapsed (0): bricks fall; Kick is disabled in JS. */
+    .wall.is-collapsed { overflow: hidden; }
+
+    .wall.is-collapsed .brick {
+      animation: brickFall 720ms cubic-bezier(0.4, 0, 0.7, 1) forwards;
+    }
+
+    .wall.is-collapsed .brick:nth-child(odd) { animation-delay: 40ms; }
+    .wall.is-collapsed .brick:nth-child(3n) { animation-delay: 90ms; }
+    .wall.is-collapsed .brick:nth-child(4n) { animation-delay: 140ms; }
+    .wall.is-collapsed .brick:nth-child(5n) { animation-delay: 180ms; }
+
+    @keyframes brickFall {
+      0% { transform: translateY(0) rotate(0); opacity: 1; }
+      100% { transform: translateY(118%) rotate(18deg); opacity: 0.15; }
+    }
+
+    .wall.is-impact { animation: wallShake 380ms ease; }
+
+    @keyframes wallShake {
+      0%, 100% { transform: translateX(0); }
+      20% { transform: translateX(-7px); }
+      40% { transform: translateX(7px); }
+      60% { transform: translateX(-4px); }
+      80% { transform: translateX(3px); }
+    }
+
+    /*
+      Kick: ball rockets toward the wall, squashes on impact, bounces back.
+      Distance scales at md+ so the strike still meets the wall on tablets/laptops.
+    */
+    .ball {
+      transform: translateX(-50%);
+      will-change: transform;
+    }
+
+    .ball.is-kicking {
+      animation: kickBall 720ms cubic-bezier(0.22, 0.9, 0.32, 1);
+    }
+
+    @keyframes kickBall {
+      0% { transform: translateX(-50%) translateY(0) rotate(0) scale(1); }
+      38% { transform: translateX(-50%) translateY(-132px) rotate(210deg) scale(0.88); }
+      46% { transform: translateX(-50%) translateY(-118px) rotate(230deg) scale(1.1, 0.86); }
+      100% { transform: translateX(-50%) translateY(0) rotate(360deg) scale(1); }
+    }
+
+    @media (min-width: 768px) {
+      @keyframes kickBall {
+        0% { transform: translateX(-50%) translateY(0) rotate(0) scale(1); }
+        38% { transform: translateX(-50%) translateY(-168px) rotate(210deg) scale(0.88); }
+        46% { transform: translateX(-50%) translateY(-152px) rotate(230deg) scale(1.1, 0.86); }
+        100% { transform: translateX(-50%) translateY(0) rotate(360deg) scale(1); }
+      }
+    }
+
+    @media (min-width: 1024px) {
+      @keyframes kickBall {
+        0% { transform: translateX(-50%) translateY(0) rotate(0) scale(1); }
+        38% { transform: translateX(-50%) translateY(-196px) rotate(210deg) scale(0.88); }
+        46% { transform: translateX(-50%) translateY(-178px) rotate(230deg) scale(1.1, 0.86); }
+        100% { transform: translateX(-50%) translateY(0) rotate(360deg) scale(1); }
+      }
+    }
+
+    .wrench.is-spinning { animation: wrenchWork 520ms ease; }
+
+    @keyframes wrenchWork {
+      0% { transform: rotate(0); }
+      30% { transform: rotate(-28deg); }
+      70% { transform: rotate(32deg); }
+      100% { transform: rotate(0); }
+    }
+
+    .wall.is-patching { animation: patchGlow 520ms ease; }
+
+    @keyframes patchGlow {
+      0% { filter: brightness(1); }
+      40% { filter: brightness(1.18) drop-shadow(0 0 12px rgba(34, 197, 94, 0.45)); }
+      100% { filter: brightness(1); }
+    }
+
+    .modal-enter { animation: modalIn 280ms ease; }
+
+    @keyframes modalIn {
+      from { opacity: 0; transform: scale(0.94) translateY(10px); }
+      to { opacity: 1; transform: scale(1) translateY(0); }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .ball.is-kicking,
+      .wall.is-collapsed .brick,
+      .wall.is-impact,
+      .wall.is-patching,
+      .wrench.is-spinning,
+      .modal-enter {
+        animation-duration: 1ms !important;
+      }
+    }
+  </style>
+</head>
+<body class="text-stone-900 antialiased overflow-x-hidden">
+  <div class="pointer-events-none fixed inset-0 flex" aria-hidden="true">
+    <div class="pitch-grain w-1/2 h-full"></div>
+    <div class="graph-paper w-1/2 h-full"></div>
+  </div>
+
+  <div class="relative z-10 flex min-h-dvh flex-col px-3 sm:px-5 md:px-8 lg:px-12"
+       style="padding-top: max(0.75rem, var(--safe-t)); padding-bottom: max(0.75rem, var(--safe-b));">
+
+    <header class="mx-auto w-full max-w-6xl pt-2 sm:pt-4">
+      <p class="text-xs sm:text-sm font-semibold uppercase tracking-[0.2em] text-white/80">HCI studio · team prototype</p>
+      <h1 class="mt-1 text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-black tracking-tight text-white drop-shadow-md">
+        A Family of Buttons
+      </h1>
+    </header>
+
+    <main class="mx-auto mt-4 sm:mt-6 flex w-full max-w-6xl flex-1 flex-col gap-4 md:gap-6">
+      <!-- wallHealth (0–100) is always glanceable; live region supports screen readers. -->
+      <section class="rounded-2xl bg-white/80 backdrop-blur-md shadow-lg ring-1 ring-black/5 p-3 sm:p-4"
+               aria-label="Wall structural health">
+        <div class="flex items-center justify-between gap-3">
+          <div>
+            <h2 class="text-sm sm:text-base font-bold">Wall health</h2>
+            <p id="healthLabel" class="text-xs sm:text-sm text-stone-600">Pristine structure</p>
+          </div>
+          <span id="healthValue" class="tabular-nums text-2xl sm:text-3xl font-black text-emerald-700" aria-live="polite">100</span>
+        </div>
+        <div class="mt-2 h-3 sm:h-3.5 overflow-hidden rounded-full bg-stone-200" role="progressbar"
+             aria-valuemin="0" aria-valuemax="100" aria-valuenow="100" id="healthBarWrap">
+          <div id="healthBar" class="h-full w-full rounded-full bg-emerald-500 transition-[width] duration-300"></div>
+        </div>
+      </section>
+
+      <!--
+        RUBRIC — Device adaptability:
+        Flex column with sm/md/lg spacing and min-heights. Canvas uses min() width
+        so the wall never overflows iPhone, iPad, laptop, or ultrawide viewports.
+      -->
+      <section class="relative flex flex-1 min-h-[320px] sm:min-h-[380px] md:min-h-[440px] lg:min-h-[480px] items-end justify-center overflow-hidden rounded-3xl bg-stone-950/20 ring-1 ring-white/20 shadow-2xl">
+        <div class="absolute inset-0 bg-gradient-to-b from-sky-300/25 via-transparent to-black/25"></div>
+
+        <div class="relative z-10 mb-24 sm:mb-28 md:mb-32 lg:mb-36 w-[min(92%,42rem)]">
+          <div id="wall" class="wall relative rounded-md aspect-[16/9]" data-state="pristine">
+            <div id="brickGrid" class="grid h-full grid-cols-8 grid-rows-5 gap-[3px] sm:gap-1 p-[3px] sm:p-1"></div>
+            <svg class="crack-overlay absolute inset-0 h-full w-full" viewBox="0 0 160 90" preserveAspectRatio="none" aria-hidden="true">
+              <path d="M12 8 L28 22 L22 40 L40 58 L36 82" fill="none" stroke="#1c1917" stroke-width="2.2" opacity="0.75" />
+              <path d="M70 4 L78 30 L92 36 L88 70 L110 86" fill="none" stroke="#1c1917" stroke-width="1.8" opacity="0.65" />
+              <path d="M130 10 L118 28 L140 48 L126 72" fill="none" stroke="#1c1917" stroke-width="2" opacity="0.7" />
+              <path d="M50 12 L54 44 L48 88" fill="none" stroke="#1c1917" stroke-width="1.4" opacity="0.5" />
+            </svg>
+          </div>
+        </div>
+
+        <div id="ball" class="ball absolute bottom-6 sm:bottom-8 left-1/2 z-20 h-16 w-16 sm:h-20 sm:w-20 md:h-24 md:w-24" aria-hidden="true">
+          <!-- Classic truncated-icosahedron soccer ball; same box/shadow as before so kick physics stay unchanged. -->
+          <svg viewBox="0 0 100 100" class="h-full w-full drop-shadow-xl">
+            <defs>
+              <radialGradient id="ballShade" cx="32%" cy="28%" r="72%">
+                <stop offset="0%" stop-color="#ffffff" />
+                <stop offset="38%" stop-color="#f4f4f5" />
+                <stop offset="78%" stop-color="#d4d4d8" />
+                <stop offset="100%" stop-color="#71717a" />
+              </radialGradient>
+              <radialGradient id="pentShade" cx="38%" cy="32%" r="70%">
+                <stop offset="0%" stop-color="#3f3f46" />
+                <stop offset="55%" stop-color="#18181b" />
+                <stop offset="100%" stop-color="#09090b" />
+              </radialGradient>
+              <radialGradient id="ballSpec" cx="30%" cy="24%" r="38%">
+                <stop offset="0%" stop-color="#ffffff" stop-opacity="0.55" />
+                <stop offset="100%" stop-color="#ffffff" stop-opacity="0" />
+              </radialGradient>
+              <clipPath id="ballClip"><circle cx="50" cy="50" r="47.2" /></clipPath>
+            </defs>
+            <circle cx="50" cy="50" r="48" fill="url(#ballShade)" stroke="#111827" stroke-width="1.6" />
+            <g clip-path="url(#ballClip)" stroke="#111827" stroke-width="1.15" stroke-linejoin="round" stroke-linecap="round">
+              <polygon fill="#fafafa" points="40.72,88.33 59.28,88.33 68.56,75.55 59.28,62.78 40.72,62.78 31.44,75.55" />
+              <polygon fill="#fafafa" points="40.72,62.78 34.98,45.12 19.96,40.24 10.68,53.02 16.42,70.67 31.44,75.55" />
+              <polygon fill="#fafafa" points="89.32,53.02 80.04,40.24 65.02,45.12 59.28,62.78 68.56,75.55 83.58,70.67" />
+              <polygon fill="#fafafa" points="80.04,24.45 65.02,13.54 50.00,18.42 50.00,34.21 65.02,45.12 80.04,40.24" />
+              <polygon fill="#fafafa" points="19.96,24.45 19.96,40.24 34.98,45.12 50.00,34.21 50.00,18.42 34.98,13.54" />
+              <polygon fill="#f4f4f5" points="31.44,91.34 40.72,94.36 59.28,94.36 68.56,91.34 59.28,88.33 40.72,88.33" />
+              <polygon fill="#f4f4f5" points="4.95,54.88 10.68,72.53 16.42,80.43 16.42,70.67 10.68,53.02 4.95,45.12" />
+              <polygon fill="#f4f4f5" points="89.32,53.02 83.58,70.67 83.58,80.43 89.32,72.53 95.05,54.88 95.05,45.12" />
+              <polygon fill="#f4f4f5" points="16.42,19.57 10.68,27.47 19.96,24.45 34.98,13.54 40.72,5.64 31.44,8.66" />
+              <polygon fill="#f4f4f5" points="83.58,19.57 68.56,8.66 59.28,5.64 65.02,13.54 80.04,24.45 89.32,27.47" />
+              <polygon fill="url(#pentShade)" points="40.72,62.78 59.28,62.78 65.02,45.12 50.00,34.21 34.98,45.12" />
+              <polygon fill="url(#pentShade)" points="59.28,5.64 40.72,5.64 34.98,13.54 50.00,18.42 65.02,13.54" />
+              <polygon fill="url(#pentShade)" points="89.32,53.02 95.05,45.12 89.32,27.47 80.04,24.45 80.04,40.24" />
+              <polygon fill="url(#pentShade)" points="19.96,24.45 10.68,27.47 4.95,45.12 10.68,53.02 19.96,40.24" />
+              <polygon fill="url(#pentShade)" points="83.58,80.43 83.58,70.67 68.56,75.55 59.28,88.33 68.56,91.34" />
+              <polygon fill="url(#pentShade)" points="31.44,91.34 40.72,88.33 31.44,75.55 16.42,70.67 16.42,80.43" />
+            </g>
+            <circle cx="50" cy="50" r="47.2" fill="url(#ballSpec)" />
+            <circle cx="50" cy="50" r="48" fill="none" stroke="#111827" stroke-width="1.6" />
+          </svg>
+        </div>
+      </section>
+
+      <!--
+        RUBRIC — Mobile optimization:
+        Exactly two primary actions. min-h-14 = 56px touch targets, stacked on
+        phones (grid-cols-1) and paired from sm:. :active:scale-95 is the tactile
+        feedback (hover is not required for the interaction to feel complete).
+      -->
+      <section class="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 lg:gap-6 pb-2">
+        <button id="kickBtn" type="button"
+                class="flex min-h-14 items-center justify-center gap-3 rounded-2xl bg-emerald-600 px-4 py-3 text-base sm:text-lg font-bold text-white shadow-lg ring-1 ring-emerald-300/40 transition active:scale-95 disabled:cursor-not-allowed disabled:opacity-40 disabled:active:scale-100 focus:outline-none focus-visible:ring-4 focus-visible:ring-white">
+          <span class="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/15" aria-hidden="true">
+            <svg viewBox="0 0 24 24" class="h-5 w-5" fill="currentColor">
+              <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.8" />
+              <polygon points="12,8.2 14.6,10.1 13.6,13.2 10.4,13.2 9.4,10.1" />
+            </svg>
+          </span>
+          Kick Ball
+        </button>
+        <button id="repairBtn" type="button"
+                class="flex min-h-14 items-center justify-center gap-3 rounded-2xl bg-amber-700 px-4 py-3 text-base sm:text-lg font-bold text-white shadow-lg ring-1 ring-amber-300/40 transition active:scale-95 focus:outline-none focus-visible:ring-4 focus-visible:ring-white">
+          <span id="wrenchIcon" class="wrench inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/15" aria-hidden="true">
+            <svg viewBox="0 0 24 24" class="h-5 w-5" fill="currentColor">
+              <path d="M13.2 2.4l8.4 8.4-2.4 1-1.8-1.8-7.1 7.1 1.8 1.8-1 2.4-8.4-8.4 2.4-1 1.8 1.8 7.1-7.1-1.8-1.8 1-2.4z" />
+            </svg>
+          </span>
+          Repair Wall
+        </button>
+      </section>
+    </main>
+  </div>
+
+  <div id="collapseModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-stone-950/70 p-4" role="dialog" aria-modal="true" aria-labelledby="collapseTitle" aria-hidden="true" inert>
+    <div class="modal-enter w-full max-w-md rounded-3xl bg-white p-6 sm:p-8 text-center shadow-2xl">
+      <p class="text-xs font-semibold uppercase tracking-[0.18em] text-amber-800">Team checkpoint</p>
+      <h2 id="collapseTitle" class="mt-2 text-2xl sm:text-3xl font-black text-stone-900 leading-tight">
+        The structural foundation collapsed!
+      </h2>
+      <p class="mt-3 text-sm sm:text-base text-stone-600 leading-relaxed">
+        Work together with DIY skills to rebuild the project!
+      </p>
+      <button id="rebuildBtn" type="button"
+              class="mt-6 inline-flex min-h-14 w-full items-center justify-center rounded-2xl bg-amber-700 px-4 text-base font-bold text-white shadow-lg transition active:scale-95 focus:outline-none focus-visible:ring-4 focus-visible:ring-amber-300">
+        Rebuild Foundation
+      </button>
+    </div>
+  </div>
+
+  <script>
+    /**
+     * Global simulation state.
+     * wallHealth (0–100, start 100) is the single source of truth.
+     * Visual bands are derived from it so iPhone / iPad / desktop stay in sync.
+     *
+     * Kick Ball: −15 health + kick keyframes.
+     * Repair Wall: +15 health (capped at 100) + wrench rotation.
+     */
+    const HEALTH_STEP = 15;
+    const MAX_HEALTH = 100;
+    let wallHealth = 100;
+    let isKicking = false;
+
+    const wallEl = document.getElementById("wall");
+    const brickGrid = document.getElementById("brickGrid");
+    const ballEl = document.getElementById("ball");
+    const kickBtn = document.getElementById("kickBtn");
+    const repairBtn = document.getElementById("repairBtn");
+    const wrenchIcon = document.getElementById("wrenchIcon");
+    const healthValue = document.getElementById("healthValue");
+    const healthBar = document.getElementById("healthBar");
+    const healthBarWrap = document.getElementById("healthBarWrap");
+    const healthLabel = document.getElementById("healthLabel");
+    const collapseModal = document.getElementById("collapseModal");
+    const rebuildBtn = document.getElementById("rebuildBtn");
+
+    // 8×5 masonry field (40 cells) so crumbling reads as many bricks, not a texture.
+    function buildBricks() {
+      const fragment = document.createDocumentFragment();
+      for (let i = 0; i < 40; i += 1) {
+        const brick = document.createElement("div");
+        brick.className = "brick rounded-[2px] sm:rounded-sm min-h-[8px]";
+        brick.setAttribute("aria-hidden", "true");
+        fragment.appendChild(brick);
+      }
+      brickGrid.appendChild(fragment);
+    }
+
+    function healthBand(value) {
+      if (value <= 0) return "collapsed";
+      if (value <= 39) return "crumbling";
+      if (value <= 79) return "fractured";
+      return "pristine";
+    }
+
+    function bandCopy(band) {
+      return {
+        pristine: "Pristine structure",
+        fractured: "Fractured — cracks appearing",
+        crumbling: "Crumbling — bricks shifting",
+        collapsed: "Collapsed — foundation failed"
+      }[band];
+    }
+
+    function bandBarClass(band) {
+      return {
+        pristine: "bg-emerald-500",
+        fractured: "bg-amber-400",
+        crumbling: "bg-orange-600",
+        collapsed: "bg-red-700"
+      }[band];
+    }
+
+    function bandValueClass(band) {
+      return {
+        pristine: "text-emerald-700",
+        fractured: "text-amber-700",
+        crumbling: "text-orange-700",
+        collapsed: "text-red-700"
+      }[band];
+    }
+
+    function applyWallClasses(band) {
+      wallEl.classList.remove("is-fractured", "is-crumbling", "is-collapsed");
+      if (band === "fractured") wallEl.classList.add("is-fractured");
+      if (band === "crumbling") wallEl.classList.add("is-crumbling");
+      if (band === "collapsed") wallEl.classList.add("is-collapsed");
+      wallEl.dataset.state = band;
+    }
+
+    function render() {
+      wallHealth = Math.max(0, Math.min(MAX_HEALTH, wallHealth));
+      const band = healthBand(wallHealth);
+
+      healthValue.textContent = String(wallHealth);
+      healthValue.className = "tabular-nums text-2xl sm:text-3xl font-black " + bandValueClass(band);
+      healthLabel.textContent = bandCopy(band);
+      healthBar.style.width = wallHealth + "%";
+      healthBar.className = "h-full rounded-full transition-[width] duration-300 " + bandBarClass(band);
+      healthBarWrap.setAttribute("aria-valuenow", String(wallHealth));
+
+      applyWallClasses(band);
+
+      const collapsed = band === "collapsed";
+      kickBtn.disabled = collapsed || isKicking;
+      kickBtn.setAttribute("aria-disabled", String(collapsed || isKicking));
+      collapseModal.classList.toggle("hidden", !collapsed);
+      collapseModal.classList.toggle("flex", collapsed);
+      collapseModal.setAttribute("aria-hidden", String(!collapsed));
+      if (collapsed) {
+        collapseModal.removeAttribute("inert");
+        rebuildBtn.focus();
+      } else {
+        collapseModal.setAttribute("inert", "");
+      }
+    }
+
+    function kick() {
+      if (isKicking || wallHealth <= 0) return;
+      isKicking = true;
+      kickBtn.disabled = true;
+
+      ballEl.classList.remove("is-kicking");
+      void ballEl.offsetWidth;
+      ballEl.classList.add("is-kicking");
+
+      window.setTimeout(function onImpact() {
+        wallEl.classList.remove("is-impact");
+        void wallEl.offsetWidth;
+        wallEl.classList.add("is-impact");
+        wallHealth -= HEALTH_STEP;
+        render();
+      }, 270);
+
+      window.setTimeout(function onKickEnd() {
+        ballEl.classList.remove("is-kicking");
+        wallEl.classList.remove("is-impact");
+        isKicking = false;
+        render();
+      }, 740);
+    }
+
+    function repair() {
+      wrenchIcon.classList.remove("is-spinning");
+      void wrenchIcon.offsetWidth;
+      wrenchIcon.classList.add("is-spinning");
+
+      if (wallHealth < MAX_HEALTH && wallHealth > 0) {
+        wallEl.classList.remove("is-patching");
+        void wallEl.offsetWidth;
+        wallEl.classList.add("is-patching");
+        wallHealth += HEALTH_STEP;
+        render();
+      } else if (wallHealth === 0) {
+        // Modal owns recovery via Rebuild Foundation (spec).
+      }
+
+      window.setTimeout(function () {
+        wrenchIcon.classList.remove("is-spinning");
+        wallEl.classList.remove("is-patching");
+      }, 540);
+    }
+
+    function rebuild() {
+      wallHealth = MAX_HEALTH;
+      isKicking = false;
+      wallEl.classList.remove("is-collapsed", "is-crumbling", "is-fractured", "is-impact", "is-patching");
+      render();
+      kickBtn.focus();
+    }
+
+    buildBricks();
+    kickBtn.addEventListener("click", kick);
+    repairBtn.addEventListener("click", repair);
+    rebuildBtn.addEventListener("click", rebuild);
+    render();
+  </script>
+</body>
+</html>
